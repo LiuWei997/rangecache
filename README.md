@@ -94,3 +94,6 @@ Requires Java 17+ and Spring Boot 3+.
   are not included yet.
 - The data should be ordered and append-mostly. Backdated updates or deletes
   require explicit invalidation.
+
+---
+🌟 Support this projectIf you like this project, please give it a Star! It helps more people discover the repository and is the best encouragement for open-source creators.

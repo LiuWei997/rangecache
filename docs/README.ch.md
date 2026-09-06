@@ -96,3 +96,6 @@ mvn install
 - 預設使用 local in-memory LRU；目前尚未支援 Redis 或 distributed cache。
 - 資料應該是有順序且以 append-mostly 為主；對已覆蓋範圍進行補寫、更新或刪除
   時，需要主動清除相關 cache。
+
+---
+🌟 支持一下如果您喜歡這個專案，請給它一個 Star ⭐！這可以讓更多人看到這個專案，也是對開源創作者最好的鼓勵與支持。
