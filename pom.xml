@@ -9,6 +9,29 @@
     <version>0.2.1</version>
     <name>rangecache Spring Boot starter</name>
     <description>A Spring Boot cache library that reuses covered query ranges and fetches only missing intervals for ordered data.</description>
+    <url>https://github.com/LiuWei997/rangecache</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>LiuWei997</name>
+            <url>https://github.com/LiuWei997</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/LiuWei997/rangecache.git</connection>
+        <developerConnection>scm:git:ssh://github.com/LiuWei997/rangecache.git</developerConnection>
+        <url>https://github.com/LiuWei997/rangecache</url>
+        <tag>HEAD</tag>
+    </scm>
 
     <properties>
         <java.version>17</java.version>
