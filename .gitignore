@@ -1,5 +1,6 @@
 # Build output
 target/
+.m2-cache/
 
 # IntelliJ IDEA
 .idea/
