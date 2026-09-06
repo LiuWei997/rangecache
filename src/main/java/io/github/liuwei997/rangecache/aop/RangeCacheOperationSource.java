@@ -1,7 +1,6 @@
 package io.github.liuwei997.rangecache.aop;
 
 import io.github.liuwei997.rangecache.annotation.RangeCacheable;
-import io.github.liuwei997.rangecache.annotation.RangeCacheBypass;
 import io.github.liuwei997.rangecache.annotation.RangeEnd;
 import io.github.liuwei997.rangecache.annotation.RangeStart;
 import io.github.liuwei997.rangecache.core.InvalidRangeCacheMethodException;
@@ -61,8 +60,6 @@ public final class RangeCacheOperationSource {
             throw invalid(metadataMethod, "uniqueKeyProperty must not be blank");
         }
 
-        boolean bypass = resolveBypassMarker(metadataMethod, specificMethod);
-
         MethodIdentity identity = MethodIdentity.of(metadataMethod);
         String cacheName = annotation.cacheName().isBlank()
             ? defaultCacheName(identity)
@@ -73,7 +70,6 @@ public final class RangeCacheOperationSource {
             identity,
             cacheName,
             annotation.key(),
-            bypass,
             startIndex,
             endIndex,
             annotation.rangeProperty(),
@@ -148,39 +144,6 @@ public final class RangeCacheOperationSource {
             }
         }
         return found;
-    }
-
-    private boolean resolveBypassMarker(Method primary, Method secondary) {
-        boolean primaryMarker = hasBypassMarker(primary, 0);
-        boolean secondaryMarker = !primary.equals(secondary) && hasBypassMarker(secondary, 0);
-        if (hasBypassMarkerOutsideFirst(primary) || hasBypassMarkerOutsideFirst(secondary)) {
-            throw invalid(primary, "@RangeCacheBypass must annotate the first method parameter");
-        }
-        return primaryMarker || secondaryMarker;
-    }
-
-    private boolean hasBypassMarker(Method method, int index) {
-        if (method == null || method.getParameterCount() <= index) {
-            return false;
-        }
-        return method.getParameterAnnotations()[index].length > 0
-            && java.util.Arrays.stream(method.getParameterAnnotations()[index])
-                .anyMatch(annotation -> annotation.annotationType() == RangeCacheBypass.class);
-    }
-
-    private boolean hasBypassMarkerOutsideFirst(Method method) {
-        if (method == null) {
-            return false;
-        }
-        Annotation[][] annotations = method.getParameterAnnotations();
-        for (int index = 1; index < annotations.length; index++) {
-            for (Annotation annotation : annotations[index]) {
-                if (annotation.annotationType() == RangeCacheBypass.class) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     private int findNamedParameter(Method method, String name) {

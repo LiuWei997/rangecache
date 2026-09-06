@@ -39,7 +39,7 @@ Then add the locally installed starter to your Spring Boot application:
 <dependency>
   <groupId>io.github.liuwei997</groupId>
   <artifactId>rangecache-spring-boot-starter</artifactId>
-  <version>0.2.0-SNAPSHOT</version>
+  <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -58,7 +58,7 @@ Add the starter dependency:
 <dependency>
   <groupId>io.github.liuwei997</groupId>
   <artifactId>rangecache-spring-boot-starter</artifactId>
-  <version>0.2.0-SNAPSHOT</version>
+  <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -86,26 +86,6 @@ With conventional parameter and row property names, only `@RangeCacheable` is re
 List<Event> findEvents(Long userId, Instant rangeStart, Instant rangeEnd);
 ```
 
-To permanently bypass range caching for a method, annotate its first parameter
-with `@RangeCacheBypass`. The invocation proceeds directly to the original
-method and does not read or update the cache:
-
-```java
-@RangeCacheable(
-    rangeProperty = "createdAt",
-    uniqueKeyProperty = "id"
-)
-List<Event> refreshEvents(
-    @RangeCacheBypass Long userId,
-    @RangeStart Instant from,
-    @RangeEnd Instant to
-);
-```
-
-`@RangeCacheBypass` is a method-parameter marker; in V0.2 it is supported only
-on the first parameter. It is intended for a method that should always bypass
-the range cache, rather than for a single call-site toggle.
-
 The method must return a complete, deterministic `List` for the requested range. Both range endpoints are required and must be non-null.
 
 ## Configuration template
@@ -125,7 +105,7 @@ rangecache:
 
   # Maximum number of logical series retained by the local in-memory LRU cache.
   # When the limit is reached, the least recently used inactive series is evicted.
-  maximum-series: 4096                  # default: 4096, must be >= 1
+  maximum-series: 1000                  # default: 1000, must be >= 1
 ```
 
 Minimal configuration (all defaults):
