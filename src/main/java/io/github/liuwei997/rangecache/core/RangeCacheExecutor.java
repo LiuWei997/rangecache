@@ -6,7 +6,6 @@ import io.github.liuwei997.rangecache.planner.QueryPlan;
 import io.github.liuwei997.rangecache.planner.RangeQueryPlanner;
 import io.github.liuwei997.rangecache.store.LocalRangeCacheEntry;
 import io.github.liuwei997.rangecache.store.LocalRangeCacheStore;
-import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -76,8 +75,8 @@ public final class RangeCacheExecutor implements RangeCacheManager {
     }
 
     @Override
-    public void clearMethod(Method method) {
-        store.clearMethod(MethodIdentity.of(Objects.requireNonNull(method, "method")));
+    public void clearMethod(String cacheName) {
+        store.clearMethod(Objects.requireNonNull(cacheName, "cacheName"));
     }
 
     @Override

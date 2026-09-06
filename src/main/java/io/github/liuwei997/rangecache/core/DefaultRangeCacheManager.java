@@ -1,6 +1,5 @@
 package io.github.liuwei997.rangecache.core;
 
-import java.lang.reflect.Method;
 import java.util.Objects;
 
 public final class DefaultRangeCacheManager implements RangeCacheManager {
@@ -17,8 +16,8 @@ public final class DefaultRangeCacheManager implements RangeCacheManager {
     }
 
     @Override
-    public void clearMethod(Method method) {
-        executor.clearMethod(method);
+    public void clearMethod(String cacheName) {
+        executor.clearMethod(cacheName);
     }
 
     @Override

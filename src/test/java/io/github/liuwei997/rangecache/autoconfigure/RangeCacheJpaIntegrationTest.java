@@ -61,11 +61,15 @@ class RangeCacheJpaIntegrationTest {
 
         assertThat(first).extracting(TestEntity::getId).containsExactly(1L, 2L);
         assertThat(cached).extracting(TestEntity::getId).containsExactly(1L, 2L);
+        cacheManager.clearMethod("events");
     }
 
     public interface TestRepository extends JpaRepository<TestEntity, Long> {
 
-        @RangeCacheable(rangeProperty = "createdAt", uniqueKeyProperty = "id")
+        @RangeCacheable(
+            cacheName = "events",
+            rangeProperty = "createdAt",
+            uniqueKeyProperty = "id")
         @Query("""
             select event from RangeCacheTestEvent event
             where event.owner = :owner

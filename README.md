@@ -4,11 +4,7 @@
 
 Requires Java 17+ and Spring Boot 3+.
 
-The current V0.2 implementation uses `Instant` as its range type. Support for
-other naturally ordered types such as `LocalDate`, `LocalDateTime`, numeric
-types, and `String` is planned for V0.3; see
-[`docs/implementation-spec-v0.3.md`](docs/implementation-spec-v0.3.md) for the
-design and database-ordering constraints.
+The current V0.2 implementation uses `Instant` as its range type.
 
 Most caches treat each query range as a different cache key. For example, after loading `[01:00, 14:00]`, a request for `[00:00, 15:00]` may query the entire second range again, even though most of it was already read.
 
@@ -182,18 +178,19 @@ negative, and `maximum-series` must be at least `1`.
 // 1. One logical series: method + non-range arguments
 rangeCacheManager.clearSeries(seriesKey);
 
-// 2. Every series belonging to one method
-rangeCacheManager.clearMethod(
-    EventService.class.getMethod(
-        "findEvents", Long.class, Instant.class, Instant.class));
+// 2. Every series belonging to one cache name
+rangeCacheManager.clearMethod("events");
 
 // 3. Every series of every method
 rangeCacheManager.clearAll();
 ```
 
 Clearing a series removes both its rows and coverage metadata. The method-level
-operation accepts a Java reflection `Method` and resolves its stable identity
-internally, while the global operation clears the local LRU store completely.
+operation uses the configured or generated `cacheName`, while the global
+operation clears the local LRU store completely. If multiple methods share the
+same cache name, they are invalidated together.
+If an application needs to invalidate by name, it is recommended to set an
+explicit `cacheName` on the annotation.
 
 Enable decision logs when needed:
 

@@ -71,13 +71,13 @@ class LocalRangeCacheStoreTest {
     }
 
     @Test
-    void clearsEverySeriesForOneMethodOnly() {
+    void clearsEverySeriesForOneCacheNameOnly() {
         LocalRangeCacheStore store = new LocalRangeCacheStore(10);
         MethodIdentity query = new MethodIdentity("Type", "query", List.of());
         MethodIdentity other = new MethodIdentity("Type", "other", List.of());
         SeriesKey queryFirst = new SeriesKey("cache", query, "first");
         SeriesKey querySecond = new SeriesKey("cache", query, "second");
-        SeriesKey otherSeries = new SeriesKey("cache", other, "first");
+        SeriesKey otherSeries = new SeriesKey("other-cache", other, "first");
 
         LocalRangeCacheEntry queryFirstEntry;
         LocalRangeCacheEntry otherEntry;
@@ -91,7 +91,7 @@ class LocalRangeCacheStoreTest {
             otherEntry = lease.entry();
         }
 
-        store.clearMethod(query);
+        store.clearMethod("cache");
 
         try (var lease = store.acquire(queryFirst)) {
             assertThat(lease.entry()).isNotSameAs(queryFirstEntry);
