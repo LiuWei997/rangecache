@@ -6,6 +6,7 @@ import io.github.liuwei997.rangecache.planner.QueryPlan;
 import io.github.liuwei997.rangecache.planner.RangeQueryPlanner;
 import io.github.liuwei997.rangecache.store.LocalRangeCacheEntry;
 import io.github.liuwei997.rangecache.store.LocalRangeCacheStore;
+import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -70,11 +71,13 @@ public final class RangeCacheExecutor implements RangeCacheManager {
     }
 
     @Override
-    public void clear(String cacheName) {
-        if (cacheName == null || cacheName.isBlank()) {
-            throw new IllegalArgumentException("cacheName must not be blank");
-        }
-        store.clear(cacheName);
+    public void clearSeries(SeriesKey seriesKey) {
+        store.clearSeries(Objects.requireNonNull(seriesKey, "seriesKey"));
+    }
+
+    @Override
+    public void clearMethod(Method method) {
+        store.clearMethod(MethodIdentity.of(Objects.requireNonNull(method, "method")));
     }
 
     @Override
@@ -196,7 +199,7 @@ public final class RangeCacheExecutor implements RangeCacheManager {
 
     private void removeRange(LocalRangeCacheEntry entry, Range<Instant> range) {
         NavigableMap<Instant, List<Object>> selected = entry.rowIdsByCoordinate().subMap(
-            range.lowerEndpoint(), true, range.upperEndpoint(), false);
+            range.lowerEndpoint(), true, range.upperEndpoint(), true);
         List<Instant> coordinates = new ArrayList<>(selected.keySet());
         for (Instant coordinate : coordinates) {
             List<Object> ids = entry.rowIdsByCoordinate().remove(coordinate);
@@ -212,7 +215,7 @@ public final class RangeCacheExecutor implements RangeCacheManager {
     private List<?> slice(LocalRangeCacheEntry entry, Range<Instant> range) {
         List<Object> values = new ArrayList<>();
         entry.rowIdsByCoordinate()
-            .subMap(range.lowerEndpoint(), true, range.upperEndpoint(), false)
+            .subMap(range.lowerEndpoint(), true, range.upperEndpoint(), true)
             .values()
             .forEach(ids -> ids.forEach(id -> values.add(entry.rowsById().get(id))));
         return List.copyOf(values);

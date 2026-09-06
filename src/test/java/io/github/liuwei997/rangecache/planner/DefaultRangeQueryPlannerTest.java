@@ -50,6 +50,6 @@ class DefaultRangeQueryPlannerTest {
     }
 
     private Range<Instant> range(long start, long end) {
-        return Range.closedOpen(ZERO.plusSeconds(start), ZERO.plusSeconds(end));
+        return Range.closed(ZERO.plusSeconds(start), ZERO.plusSeconds(end));
     }
 }

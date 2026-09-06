@@ -6,7 +6,7 @@
 
     <groupId>io.github.liuwei997</groupId>
     <artifactId>rangecache-spring-boot-starter</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.2.0-SNAPSHOT</version>
     <name>rangecache Spring Boot starter</name>
     <description>A Spring Boot cache library that reuses covered query ranges and fetches only missing intervals for ordered data.</description>
 

@@ -70,7 +70,7 @@ class RangeCacheJpaIntegrationTest {
             select event from RangeCacheTestEvent event
             where event.owner = :owner
               and event.createdAt >= :from
-              and event.createdAt < :to
+              and event.createdAt <= :to
             order by event.createdAt, event.id
             """)
         List<TestEntity> findEvents(

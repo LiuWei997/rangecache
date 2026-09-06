@@ -1,8 +1,10 @@
 package io.github.liuwei997.rangecache.store;
 
 import io.github.liuwei997.rangecache.core.SeriesKey;
+import io.github.liuwei997.rangecache.core.MethodIdentity;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public final class LocalRangeCacheStore {
 
@@ -25,9 +27,17 @@ public final class LocalRangeCacheStore {
         return new Lease(this, key, holder.entry);
     }
 
-    public synchronized void clear(String cacheName) {
+    public synchronized void clearSeries(SeriesKey seriesKey) {
+        Objects.requireNonNull(seriesKey, "seriesKey");
+        if (entries.remove(seriesKey) != null) {
+            evictionPolicy.onRemoval(seriesKey);
+        }
+    }
+
+    public synchronized void clearMethod(MethodIdentity methodIdentity) {
+        Objects.requireNonNull(methodIdentity, "methodIdentity");
         entries.keySet().removeIf(key -> {
-            if (key.cacheName().equals(cacheName)) {
+            if (key.methodIdentity().equals(methodIdentity)) {
                 evictionPolicy.onRemoval(key);
                 return true;
             }

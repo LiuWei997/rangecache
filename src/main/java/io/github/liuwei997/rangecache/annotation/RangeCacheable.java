@@ -11,8 +11,10 @@ import java.lang.annotation.Target;
 @Documented
 public @interface RangeCacheable {
 
+    /** Empty means the annotated method identity is used as the cache name. */
     String cacheName() default "";
 
+    /** Empty means a key is generated from the non-range method arguments. */
     String key() default "";
 
     String rangeProperty() default "cachedRange";

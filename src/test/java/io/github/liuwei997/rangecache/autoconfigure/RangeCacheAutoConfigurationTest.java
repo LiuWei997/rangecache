@@ -36,8 +36,8 @@ class RangeCacheAutoConfigurationTest {
             assertThat(service.query("user-1", at(1), at(10))).hasSize(2);
             assertThat(service.query("user-1", at(1), at(15))).hasSize(3);
             assertThat(service.calls()).containsExactly(
-                Range.closedOpen(at(1), at(10)),
-                Range.closedOpen(at(10), at(15)));
+                Range.closed(at(1), at(10)),
+                Range.closed(at(10), at(15)));
         });
     }
 
@@ -59,7 +59,7 @@ class RangeCacheAutoConfigurationTest {
     interface QueryService {
 
         @RangeCacheable(rangeProperty = "createdAt", uniqueKeyProperty = "id")
-        List<Row> query(String userId, @RangeStart Instant from, @RangeEnd Instant to);
+        List<Row> query(String accountKey, @RangeStart Instant from, @RangeEnd Instant to);
 
         List<Range<Instant>> calls();
     }
@@ -70,8 +70,8 @@ class RangeCacheAutoConfigurationTest {
         private final List<Range<Instant>> calls = new ArrayList<>();
 
         @Override
-        public List<Row> query(String userId, Instant from, Instant to) {
-            Range<Instant> range = Range.closedOpen(from, to);
+        public List<Row> query(String accountKey, Instant from, Instant to) {
+            Range<Instant> range = Range.closed(from, to);
             calls.add(range);
             return source.stream().filter(row -> range.contains(row.getCreatedAt())).toList();
         }

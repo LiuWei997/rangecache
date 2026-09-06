@@ -12,7 +12,7 @@ public class RangeCacheProperties {
     private int maxDeltaQueries = 5;
 
     /** Maximum logical series retained by the local LRU store. */
-    private int maximumSeries = 1000;
+    private int maximumSeries = 512;
 
     public boolean isEnabled() {
         return enabled;

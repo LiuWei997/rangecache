@@ -8,6 +8,7 @@ import io.github.liuwei997.rangecache.planner.DefaultRangeQueryPlanner;
 import io.github.liuwei997.rangecache.planner.QueryDecision;
 import io.github.liuwei997.rangecache.store.LocalRangeCacheStore;
 import java.time.Instant;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -87,6 +88,13 @@ class RangeCacheExecutorTest {
     }
 
     @Test
+    void supportsAClosedSinglePointRange() throws Throwable {
+        RangeCacheExecution result = execute(range(1, 1), ignored -> List.of(row(1, 1)));
+
+        assertThat(result.rows()).hasSize(1);
+    }
+
+    @Test
     void supportsRecordProperties() throws Throwable {
         SeriesKey recordKey = new SeriesKey(
             "records", new MethodIdentity("Example", "records", List.of()), "user-1");
@@ -130,6 +138,28 @@ class RangeCacheExecutorTest {
         }
     }
 
+    @Test
+    void clearsAllSeriesForAMethodUsingReflectionMethod() throws Throwable {
+        LocalRangeCacheStore store = new LocalRangeCacheStore(100);
+        RangeCacheExecutor manager = new RangeCacheExecutor(
+            store, new DefaultRangeQueryPlanner(5));
+        Method method = RangeCacheExecutorTest.class
+            .getDeclaredMethod("methodUsedForInvalidation", String.class);
+        SeriesKey methodKey = new SeriesKey(
+            "events", MethodIdentity.of(method), "user-1");
+        AtomicInteger queries = new AtomicInteger();
+        RangeLoader loader = ignored -> {
+            queries.incrementAndGet();
+            return List.of(row(1, 1));
+        };
+
+        manager.execute(methodKey, range(1, 2), "cachedRange", "nonRepeatedKey", loader);
+        manager.clearMethod(method);
+        manager.execute(methodKey, range(1, 2), "cachedRange", "nonRepeatedKey", loader);
+
+        assertThat(queries).hasValue(2);
+    }
+
     private RangeCacheExecution execute(Range<Instant> range, RangeLoader loader) throws Throwable {
         return executor.execute(key, range, "cachedRange", "nonRepeatedKey", loader);
     }
@@ -146,8 +176,12 @@ class RangeCacheExecutorTest {
         return new Row(ZERO.plusSeconds(second), id);
     }
 
+    private static void methodUsedForInvalidation(String accountKey) {
+        // Reflection target for the public clearMethod(Method) contract.
+    }
+
     private Range<Instant> range(long start, long end) {
-        return Range.closedOpen(ZERO.plusSeconds(start), ZERO.plusSeconds(end));
+        return Range.closed(ZERO.plusSeconds(start), ZERO.plusSeconds(end));
     }
 
     static final class Row {

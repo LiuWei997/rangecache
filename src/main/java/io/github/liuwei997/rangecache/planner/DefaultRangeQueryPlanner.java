@@ -20,7 +20,9 @@ public final class DefaultRangeQueryPlanner implements RangeQueryPlanner {
     @Override
     public QueryPlan plan(Range<Instant> requestedRange, RangeSet<Instant> coverage) {
         List<Range<Instant>> missing = new ArrayList<>(
-            coverage.complement().subRangeSet(requestedRange).asRanges());
+            coverage.complement().subRangeSet(requestedRange).asRanges().stream()
+                .map(this::closedEnvelope)
+                .toList());
 
         if (missing.isEmpty()) {
             return new QueryPlan(QueryDecision.CACHE_ONLY, 0, List.of());
@@ -29,5 +31,9 @@ public final class DefaultRangeQueryPlanner implements RangeQueryPlanner {
             return new QueryPlan(QueryDecision.DELTA_FETCH, missing.size(), missing);
         }
         return new QueryPlan(QueryDecision.FULL_FETCH, missing.size(), List.of(requestedRange));
+    }
+
+    private Range<Instant> closedEnvelope(Range<Instant> range) {
+        return Range.closed(range.lowerEndpoint(), range.upperEndpoint());
     }
 }

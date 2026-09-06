@@ -51,12 +51,12 @@ public final class RangeCacheInterceptor implements MethodInterceptor {
         Object[] originalArguments = invocation.getArguments();
         Instant start = requireInstant(originalArguments, operation.startIndex(), "start", operation);
         Instant end = requireInstant(originalArguments, operation.endIndex(), "end", operation);
-        if (!start.isBefore(end)) {
-            throw new IllegalArgumentException("Range must satisfy start < end for "
+        if (start.isAfter(end)) {
+            throw new IllegalArgumentException("Range must satisfy start <= end for "
                 + operation.annotatedMethod().toGenericString());
         }
 
-        Range<Instant> requestedRange = Range.closedOpen(start, end);
+        Range<Instant> requestedRange = Range.closed(start, end);
         SeriesKey seriesKey = keyGenerator.generate(operation, target, originalArguments);
         RangeCacheExecution execution = executor.execute(
             seriesKey,
