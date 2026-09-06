@@ -52,6 +52,16 @@ class RangeCacheAutoConfigurationTest {
         });
     }
 
+    @Test
+    void passesNonInstantEndpointsToTheTargetWithoutConversion() {
+        contextRunner.run(context -> {
+            NumericQueryService service = context.getBean(NumericQueryService.class);
+            assertThat(service.query(1, 3)).extracting(NumericRow::value).containsExactly(1, 3);
+            assertThat(service.query(1, 3)).extracting(NumericRow::value).containsExactly(1, 3);
+            assertThat(service.calls()).containsExactly(Range.closed(1, 3));
+        });
+    }
+
     private static Instant at(long second) {
         return ZERO.plusSeconds(second);
     }
@@ -100,11 +110,37 @@ class RangeCacheAutoConfigurationTest {
         }
     }
 
+    interface NumericQueryService {
+        @RangeCacheable(rangeProperty = "value", uniqueKeyProperty = "id")
+        List<NumericRow> query(@RangeStart Integer from, @RangeEnd Integer to);
+        List<Range<Integer>> calls();
+    }
+
+    static class DefaultNumericQueryService implements NumericQueryService {
+        private final List<Range<Integer>> calls = new ArrayList<>();
+
+        @Override
+        public List<NumericRow> query(Integer from, Integer to) {
+            Range<Integer> range = Range.closed(from, to);
+            calls.add(range);
+            return List.of(new NumericRow(from, 1L), new NumericRow(to, 2L));
+        }
+
+        @Override public List<Range<Integer>> calls() { return calls; }
+    }
+
+    record NumericRow(Integer value, Long id) { }
+
     @Configuration(proxyBeanMethods = false)
     static class TestConfiguration {
         @Bean
         QueryService queryService() {
             return new DefaultQueryService();
+        }
+
+        @Bean
+        NumericQueryService numericQueryService() {
+            return new DefaultNumericQueryService();
         }
     }
 }

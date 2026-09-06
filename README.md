@@ -69,7 +69,7 @@ Set `rangecache.enabled=false` to disable the starter.
 <dependency>
   <groupId>io.github.liuwei997</groupId>
   <artifactId>rangecache-spring-boot-starter</artifactId>
-  <version>0.2.1</version>
+  <version>0.3.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -85,8 +85,14 @@ Requires Java 17+ and Spring Boot 3+.
 
 ## Current limitations
 
-- V0.2 supports `Instant` as the range type; broader sortable types are planned
-  for V0.3.
+- Range endpoints and the row range property must use the exact same concrete
+  naturally comparable type. V0.3 is tested with `Instant`, `LocalDateTime`,
+  `LocalDate`, `OffsetDateTime`, `ZonedDateTime`, `Integer`, `Long`,
+  `BigDecimal`, and `String`. Other concrete `Comparable` types also work when
+  their database ordering matches Java `compareTo`.
+- `String` requires a database collation compatible with Java Unicode order.
+  Align database/JDBC timezone and fractional-second precision with the Java
+  type; rangecache does not convert values.
 - The range is one-dimensional and closed-closed.
 - Both range endpoints are required; `null` is not an unbounded endpoint.
 - The method must return a complete, deterministic `List`.

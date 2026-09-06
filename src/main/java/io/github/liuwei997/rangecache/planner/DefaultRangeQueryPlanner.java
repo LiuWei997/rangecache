@@ -2,7 +2,6 @@ package io.github.liuwei997.rangecache.planner;
 
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,8 +17,9 @@ public final class DefaultRangeQueryPlanner implements RangeQueryPlanner {
     }
 
     @Override
-    public QueryPlan plan(Range<Instant> requestedRange, RangeSet<Instant> coverage) {
-        List<Range<Instant>> missing = new ArrayList<>(
+    public <R extends Comparable<? super R>> QueryPlan<R> plan(
+            Range<R> requestedRange, RangeSet<R> coverage) {
+        List<Range<R>> missing = new ArrayList<>(
             coverage.complement().subRangeSet(requestedRange).asRanges().stream()
                 .map(this::closedEnvelope)
                 .toList());
@@ -33,7 +33,7 @@ public final class DefaultRangeQueryPlanner implements RangeQueryPlanner {
         return new QueryPlan(QueryDecision.FULL_FETCH, missing.size(), List.of(requestedRange));
     }
 
-    private Range<Instant> closedEnvelope(Range<Instant> range) {
+    private <R extends Comparable<? super R>> Range<R> closedEnvelope(Range<R> range) {
         return Range.closed(range.lowerEndpoint(), range.upperEndpoint());
     }
 }

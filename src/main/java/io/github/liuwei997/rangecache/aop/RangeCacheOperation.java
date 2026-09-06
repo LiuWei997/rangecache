@@ -10,6 +10,7 @@ public record RangeCacheOperation(
         String keyExpression,
         int startIndex,
         int endIndex,
+        Class<?> rangeType,
         String rangeProperty,
         String uniqueKeyProperty) {
 }

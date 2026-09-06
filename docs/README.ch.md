@@ -73,7 +73,7 @@ rangecache:
 <dependency>
   <groupId>io.github.liuwei997</groupId>
   <artifactId>rangecache-spring-boot-starter</artifactId>
-  <version>0.2.1</version>
+  <version>0.3.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -89,7 +89,8 @@ mvn install
 
 ## 目前限制
 
-- V0.2 的 range type 只支援 `Instant`；更多可排序型別預計在 V0.3 支援。
+- Range endpoint 與 row 的 range property 必須是完全相同的 concrete、自然可排序型別。V0.3 已測試 `Instant`、`LocalDateTime`、`LocalDate`、`OffsetDateTime`、`ZonedDateTime`、`Integer`、`Long`、`BigDecimal` 與 `String`。其他 `Comparable` 型別也可使用，但資料庫排序必須和 Java `compareTo` 一致。
+- `String` 需要資料庫 collation 與 Java Unicode 排序相容；時區與小數秒 precision 也必須由 JDBC/database 與 Java 型別共同對齊，rangecache 不會自行轉換。
 - Range 目前是一維且使用閉區間。
 - `start` 與 `end` 都必須提供，`null` 不代表無界端點。
 - 被攔截的方法必須回傳完整且 deterministic 的 `List`。

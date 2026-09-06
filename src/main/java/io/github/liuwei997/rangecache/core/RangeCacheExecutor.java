@@ -6,7 +6,6 @@ import io.github.liuwei997.rangecache.planner.QueryPlan;
 import io.github.liuwei997.rangecache.planner.RangeQueryPlanner;
 import io.github.liuwei997.rangecache.store.LocalRangeCacheEntry;
 import io.github.liuwei997.rangecache.store.LocalRangeCacheStore;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -17,7 +16,6 @@ import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.BeanWrapperImpl;
 
 public final class RangeCacheExecutor implements RangeCacheManager {
-
     private final LocalRangeCacheStore store;
     private final RangeQueryPlanner planner;
 
@@ -26,127 +24,84 @@ public final class RangeCacheExecutor implements RangeCacheManager {
         this.planner = Objects.requireNonNull(planner, "planner");
     }
 
-    public RangeCacheExecution execute(
-            SeriesKey seriesKey,
-            Range<Instant> requestedRange,
-            String rangeProperty,
-            String uniqueKeyProperty,
-            RangeLoader loader) throws Throwable {
-
+    public <R extends Comparable<? super R>> RangeCacheExecution execute(
+            SeriesKey seriesKey, Range<R> requestedRange, String rangeProperty,
+            String uniqueKeyProperty, RangeLoader<R> loader) throws Throwable {
         Objects.requireNonNull(seriesKey, "seriesKey");
         Objects.requireNonNull(requestedRange, "requestedRange");
         Objects.requireNonNull(loader, "loader");
-
-        try (LocalRangeCacheStore.Lease lease = store.acquire(seriesKey)) {
-            LocalRangeCacheEntry entry = lease.entry();
+        try (LocalRangeCacheStore.Lease<R> lease = store.acquire(seriesKey)) {
+            LocalRangeCacheEntry<R> entry = lease.entry();
             entry.lock().lock();
             try {
-                QueryPlan plan = planner.plan(requestedRange, entry.coverage());
+                entry.bindRangeType(requestedRange.lowerEndpoint().getClass());
+                QueryPlan<R> plan = planner.plan(requestedRange, entry.coverage());
                 if (plan.decision() == QueryDecision.CACHE_ONLY) {
-                    return new RangeCacheExecution(
-                        plan.decision(), plan.missingRangeCount(), 0, slice(entry, requestedRange));
+                    return new RangeCacheExecution(plan.decision(), plan.missingRangeCount(), 0, slice(entry, requestedRange));
                 }
-
-                List<FetchedBatch> batches = new ArrayList<>();
-                for (Range<Instant> range : plan.rangesToFetch()) {
-                    List<?> values = loader.load(range);
-                    batches.add(resolveBatch(values, range, rangeProperty, uniqueKeyProperty));
+                List<FetchedBatch<R>> batches = new ArrayList<>();
+                for (Range<R> range : plan.rangesToFetch()) {
+                    batches.add(resolveBatch(loader.load(range), range, rangeProperty, uniqueKeyProperty,
+                        requestedRange.lowerEndpoint().getClass()));
                 }
-
-                if (plan.decision() == QueryDecision.FULL_FETCH) {
-                    removeRange(entry, requestedRange);
-                }
+                if (plan.decision() == QueryDecision.FULL_FETCH) removeRange(entry, requestedRange);
                 commit(entry, batches);
-                return new RangeCacheExecution(
-                    plan.decision(),
-                    plan.missingRangeCount(),
-                    plan.rangesToFetch().size(),
+                return new RangeCacheExecution(plan.decision(), plan.missingRangeCount(), plan.rangesToFetch().size(),
                     slice(entry, requestedRange));
-            } finally {
-                entry.lock().unlock();
-            }
+            } finally { entry.lock().unlock(); }
         }
     }
 
-    @Override
-    public void clearSeries(SeriesKey seriesKey) {
-        store.clearSeries(Objects.requireNonNull(seriesKey, "seriesKey"));
-    }
+    @Override public void clearSeries(SeriesKey seriesKey) { store.clearSeries(Objects.requireNonNull(seriesKey, "seriesKey")); }
+    @Override public void clearMethod(String cacheName) { store.clearMethod(Objects.requireNonNull(cacheName, "cacheName")); }
+    @Override public void clearAll() { store.clearAll(); }
 
-    @Override
-    public void clearMethod(String cacheName) {
-        store.clearMethod(Objects.requireNonNull(cacheName, "cacheName"));
-    }
-
-    @Override
-    public void clearAll() {
-        store.clearAll();
-    }
-
-    private FetchedBatch resolveBatch(
-            List<?> values,
-            Range<Instant> fetchedRange,
-            String rangeProperty,
-            String uniqueKeyProperty) {
-
-        if (values == null) {
-            throw new InvalidRangeCacheResultException("Annotated method returned null; expected List");
-        }
-
-        Map<Object, ResolvedRow> rows = new HashMap<>();
+    private <R extends Comparable<? super R>> FetchedBatch<R> resolveBatch(List<?> values,
+            Range<R> fetchedRange, String rangeProperty, String uniqueKeyProperty, Class<?> expectedType) {
+        if (values == null) throw new InvalidRangeCacheResultException("Annotated method returned null; expected List");
+        Map<Object, ResolvedRow<R>> rows = new HashMap<>();
         for (Object value : values) {
-            if (value == null) {
-                throw new InvalidRangeCacheResultException("Annotated method returned a null row");
-            }
+            if (value == null) throw new InvalidRangeCacheResultException("Annotated method returned a null row");
             BeanWrapper wrapper = new BeanWrapperImpl(value);
-            Object coordinateValue = readProperty(wrapper, rangeProperty);
+            R coordinate = coordinate(readProperty(wrapper, rangeProperty), expectedType, rangeProperty);
             Object id = readProperty(wrapper, uniqueKeyProperty);
-            if (!(coordinateValue instanceof Instant coordinate)) {
-                throw new InvalidRangeCacheResultException(
-                    "Property '" + rangeProperty + "' must be a non-null Instant");
-            }
-            if (!(id instanceof Comparable<?>)) {
-                throw new InvalidRangeCacheResultException(
-                    "Property '" + uniqueKeyProperty + "' must be non-null and Comparable");
-            }
-            if (!fetchedRange.contains(coordinate)) {
-                throw new InvalidRangeCacheResultException(
-                    "Row coordinate " + coordinate + " is outside fetched range " + fetchedRange);
-            }
-
-            ResolvedRow row = new ResolvedRow(id, coordinate, value);
-            // The unique key is the row identity. If a query returns the same
-            // key more than once, the later row wins; do not depend on entity
-            // equals() because JPA may return a different instance.
-            rows.put(id, row);
+            if (!(id instanceof Comparable<?>)) throw new InvalidRangeCacheResultException(
+                "Property '" + uniqueKeyProperty + "' must be non-null and Comparable");
+            if (!fetchedRange.contains(coordinate)) throw new InvalidRangeCacheResultException(
+                "Row coordinate " + coordinate + " is outside fetched range " + fetchedRange);
+            rows.put(id, new ResolvedRow<>(id, coordinate, value));
         }
-        return new FetchedBatch(fetchedRange, List.copyOf(rows.values()));
+        return new FetchedBatch<>(fetchedRange, List.copyOf(rows.values()));
+    }
+
+    @SuppressWarnings("unchecked")
+    private <R extends Comparable<? super R>> R coordinate(Object value, Class<?> expectedType, String property) {
+        if (value == null) throw new InvalidRangeCacheResultException("Property '" + property + "' must be non-null " + expectedType.getName());
+        if (value.getClass() != expectedType) throw new InvalidRangeCacheResultException("Property '" + property
+            + "' must be " + expectedType.getName() + " but was " + value.getClass().getName());
+        return (R) value;
     }
 
     private Object readProperty(BeanWrapper wrapper, String property) {
-        if (property == null || property.isBlank() || !wrapper.isReadableProperty(property)) {
-            throw new InvalidRangeCacheResultException(
-                "Result type " + wrapper.getWrappedClass().getName()
-                    + " has no readable property '" + property + "'");
-        }
-        try {
-            return wrapper.getPropertyValue(property);
-        } catch (RuntimeException exception) {
-            throw new InvalidRangeCacheResultException(
-                "Could not read property '" + property + "' from " + wrapper.getWrappedClass().getName(),
-                exception);
-        }
+        if (property == null || property.isBlank() || !wrapper.isReadableProperty(property)) throw new InvalidRangeCacheResultException(
+            "Result type " + wrapper.getWrappedClass().getName() + " has no readable property '" + property + "'");
+        try { return wrapper.getPropertyValue(property); }
+        catch (RuntimeException exception) { throw new InvalidRangeCacheResultException(
+            "Could not read property '" + property + "' from " + wrapper.getWrappedClass().getName(), exception); }
     }
 
-    private void commit(LocalRangeCacheEntry entry, List<FetchedBatch> batches) {
-        for (FetchedBatch batch : batches) {
-            for (ResolvedRow row : batch.rows()) {
-                Instant previousCoordinate = entry.coordinateById().get(row.id());
-                if (previousCoordinate == null) {
-                    addToCoordinateIndex(entry, row);
-                } else if (!previousCoordinate.equals(row.coordinate())) {
-                    removeFromCoordinateIndex(entry, previousCoordinate, row.id());
-                    addToCoordinateIndex(entry, row);
+    private <R extends Comparable<? super R>> void commit(LocalRangeCacheEntry<R> entry, List<FetchedBatch<R>> batches) {
+        for (FetchedBatch<R> batch : batches) {
+            for (ResolvedRow<R> row : batch.rows()) {
+                R previous = entry.coordinateById().get(row.id());
+                if (previous == null) add(entry, row);
+                // The unique key identifies a row. A later row with that key always
+                // replaces the cached value; only a changed coordinate needs an
+                // index move. compareTo matches the TreeMap/Guava range semantics
+                // (for example, BigDecimal 1.0 and 1.00 share one coordinate).
+                else if (previous.compareTo(row.coordinate()) != 0) {
+                    remove(entry, previous, row.id());
+                    add(entry, row);
                 }
                 entry.rowsById().put(row.id(), row.value());
                 entry.coordinateById().put(row.id(), row.coordinate());
@@ -155,65 +110,41 @@ public final class RangeCacheExecutor implements RangeCacheManager {
         }
     }
 
-    private void addToCoordinateIndex(LocalRangeCacheEntry entry, ResolvedRow row) {
-        entry.rowIdsByCoordinate()
-            .computeIfAbsent(row.coordinate(), ignored -> new ArrayList<>())
-            .add(row.id());
+    private <R extends Comparable<? super R>> void add(LocalRangeCacheEntry<R> entry, ResolvedRow<R> row) {
+        entry.rowIdsByCoordinate().computeIfAbsent(row.coordinate(), ignored -> new ArrayList<>()).add(row.id());
         entry.rowIdsByCoordinate().get(row.coordinate()).sort(this::compareIds);
     }
 
-    private void removeFromCoordinateIndex(
-            LocalRangeCacheEntry entry,
-            Instant coordinate,
-            Object id) {
+    private <R extends Comparable<? super R>> void remove(LocalRangeCacheEntry<R> entry, R coordinate, Object id) {
         List<Object> ids = entry.rowIdsByCoordinate().get(coordinate);
-        if (ids == null) {
-            return;
-        }
-        ids.removeIf(existingId -> Objects.equals(existingId, id));
-        if (ids.isEmpty()) {
-            entry.rowIdsByCoordinate().remove(coordinate);
-        }
+        if (ids == null) return;
+        ids.removeIf(existing -> Objects.equals(existing, id));
+        if (ids.isEmpty()) entry.rowIdsByCoordinate().remove(coordinate);
     }
 
-    private void removeRange(LocalRangeCacheEntry entry, Range<Instant> range) {
-        NavigableMap<Instant, List<Object>> selected = entry.rowIdsByCoordinate().subMap(
-            range.lowerEndpoint(), true, range.upperEndpoint(), true);
-        List<Instant> coordinates = new ArrayList<>(selected.keySet());
-        for (Instant coordinate : coordinates) {
-            List<Object> ids = entry.rowIdsByCoordinate().remove(coordinate);
-            if (ids != null) {
-                for (Object id : ids) {
-                    entry.rowsById().remove(id);
-                    entry.coordinateById().remove(id);
-                }
+    private <R extends Comparable<? super R>> void removeRange(LocalRangeCacheEntry<R> entry, Range<R> range) {
+        NavigableMap<R, List<Object>> selected = entry.rowIdsByCoordinate().subMap(range.lowerEndpoint(), true, range.upperEndpoint(), true);
+        for (R coordinate : new ArrayList<>(selected.keySet())) {
+            for (Object id : entry.rowIdsByCoordinate().remove(coordinate)) {
+                entry.rowsById().remove(id); entry.coordinateById().remove(id);
             }
         }
     }
 
-    private List<?> slice(LocalRangeCacheEntry entry, Range<Instant> range) {
+    private <R extends Comparable<? super R>> List<?> slice(LocalRangeCacheEntry<R> entry, Range<R> range) {
         List<Object> values = new ArrayList<>();
-        entry.rowIdsByCoordinate()
-            .subMap(range.lowerEndpoint(), true, range.upperEndpoint(), true)
-            .values()
+        entry.rowIdsByCoordinate().subMap(range.lowerEndpoint(), true, range.upperEndpoint(), true).values()
             .forEach(ids -> ids.forEach(id -> values.add(entry.rowsById().get(id))));
         return List.copyOf(values);
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private int compareIds(Object left, Object right) {
-        try {
-            return ((Comparable) left).compareTo(right);
-        } catch (RuntimeException exception) {
-            throw new InvalidRangeCacheResultException(
-                "Unique-key values must be mutually comparable: "
-                    + left.getClass().getName() + " and " + right.getClass().getName(), exception);
-        }
+        try { return ((Comparable) left).compareTo(right); }
+        catch (RuntimeException exception) { throw new InvalidRangeCacheResultException("Unique-key values must be mutually comparable: "
+            + left.getClass().getName() + " and " + right.getClass().getName(), exception); }
     }
 
-    private record ResolvedRow(Object id, Instant coordinate, Object value) {
-    }
-
-    private record FetchedBatch(Range<Instant> range, List<ResolvedRow> rows) {
-    }
+    private record ResolvedRow<R extends Comparable<? super R>>(Object id, R coordinate, Object value) { }
+    private record FetchedBatch<R extends Comparable<? super R>>(Range<R> range, List<ResolvedRow<R>> rows) { }
 }

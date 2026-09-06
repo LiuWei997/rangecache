@@ -4,9 +4,9 @@ import com.google.common.collect.Range;
 import io.github.liuwei997.rangecache.core.InvalidRangeCacheMethodException;
 import io.github.liuwei997.rangecache.core.RangeCacheExecution;
 import io.github.liuwei997.rangecache.core.RangeCacheExecutor;
+import io.github.liuwei997.rangecache.core.RangeLoader;
 import io.github.liuwei997.rangecache.core.SeriesKey;
 import java.lang.reflect.Method;
-import java.time.Instant;
 import java.util.List;
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
@@ -49,21 +49,21 @@ public final class RangeCacheInterceptor implements MethodInterceptor {
         }
 
         Object[] originalArguments = invocation.getArguments();
-        Instant start = requireInstant(originalArguments, operation.startIndex(), "start", operation);
-        Instant end = requireInstant(originalArguments, operation.endIndex(), "end", operation);
-        if (start.isAfter(end)) {
+        Comparable<?> start = requireRangeValue(originalArguments, operation.startIndex(), "start", operation);
+        Comparable<?> end = requireRangeValue(originalArguments, operation.endIndex(), "end", operation);
+        if (compare(start, end, operation) > 0) {
             throw new IllegalArgumentException("Range must satisfy start <= end for "
                 + operation.annotatedMethod().toGenericString());
         }
 
-        Range<Instant> requestedRange = Range.closed(start, end);
+        Range requestedRange = Range.closed(start, end);
         SeriesKey seriesKey = keyGenerator.generate(operation, target, originalArguments);
         RangeCacheExecution execution = executor.execute(
             seriesKey,
             requestedRange,
             operation.rangeProperty(),
             operation.uniqueKeyProperty(),
-            range -> invokeRange(proxyInvocation, originalArguments, operation, range));
+            (RangeLoader) range -> invokeRange(proxyInvocation, originalArguments, operation, range));
 
         logger.debug(
             "Range cache decision={} cache={} method={} request={} missingRanges={} databaseQueries={}",
@@ -76,11 +76,12 @@ public final class RangeCacheInterceptor implements MethodInterceptor {
         return execution.rows();
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private List<?> invokeRange(
             ProxyMethodInvocation invocation,
             Object[] originalArguments,
             RangeCacheOperation operation,
-            Range<Instant> range) throws Throwable {
+            Range range) throws Throwable {
 
         Object[] modified = originalArguments.clone();
         modified[operation.startIndex()] = range.lowerEndpoint();
@@ -93,16 +94,35 @@ public final class RangeCacheInterceptor implements MethodInterceptor {
         return list;
     }
 
-    private Instant requireInstant(
+    private Comparable<?> requireRangeValue(
             Object[] arguments,
             int index,
             String label,
             RangeCacheOperation operation) {
         Object value = arguments[index];
-        if (!(value instanceof Instant instant)) {
-            throw new IllegalArgumentException("Range " + label + " must be a non-null Instant for "
+        if (value == null) {
+            throw new IllegalArgumentException("Range " + label + " must be non-null "
+                + operation.rangeType().getName() + " for " + operation.annotatedMethod().toGenericString());
+        }
+        if (value.getClass() != operation.rangeType()) {
+            throw new IllegalArgumentException("Range " + label + " must be "
+                + operation.rangeType().getName() + " but was " + value.getClass().getName() + " for "
                 + operation.annotatedMethod().toGenericString());
         }
-        return instant;
+        if (!(value instanceof Comparable<?> comparable)) {
+            throw new IllegalArgumentException("Range " + label + " must implement Comparable for "
+                + operation.annotatedMethod().toGenericString());
+        }
+        return comparable;
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private int compare(Comparable left, Comparable right, RangeCacheOperation operation) {
+        try {
+            return left.compareTo(right);
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("Range endpoints must be mutually comparable for "
+                + operation.annotatedMethod().toGenericString(), exception);
+        }
     }
 }

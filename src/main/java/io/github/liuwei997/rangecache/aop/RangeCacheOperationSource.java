@@ -7,7 +7,6 @@ import io.github.liuwei997.rangecache.core.InvalidRangeCacheMethodException;
 import io.github.liuwei997.rangecache.core.MethodIdentity;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -49,8 +48,7 @@ public final class RangeCacheOperationSource {
         if (startIndex == endIndex) {
             throw invalid(metadataMethod, "range start and end must be different parameters");
         }
-        requireInstantParameter(metadataMethod, startIndex, "start");
-        requireInstantParameter(metadataMethod, endIndex, "end");
+        Class<?> rangeType = requireCompatibleRangeParameters(metadataMethod, startIndex, endIndex);
 
         RangeCacheable annotation = annotated.annotation();
         if (annotation.rangeProperty().isBlank()) {
@@ -72,6 +70,7 @@ public final class RangeCacheOperationSource {
             annotation.key(),
             startIndex,
             endIndex,
+            rangeType,
             annotation.rangeProperty(),
             annotation.uniqueKeyProperty()));
     }
@@ -159,10 +158,31 @@ public final class RangeCacheOperationSource {
         return -1;
     }
 
-    private void requireInstantParameter(Method method, int index, String label) {
-        if (method.getParameterTypes()[index] != Instant.class) {
-            throw invalid(method, "range " + label + " parameter must be Instant");
+    private Class<?> requireCompatibleRangeParameters(Method method, int startIndex, int endIndex) {
+        Class<?> startType = box(method.getParameterTypes()[startIndex]);
+        Class<?> endType = box(method.getParameterTypes()[endIndex]);
+        if (startType != endType) {
+            throw invalid(method, "range start and end parameters must have the same type; found "
+                + startType.getName() + " and " + endType.getName());
         }
+        if (!Comparable.class.isAssignableFrom(startType)) {
+            throw invalid(method, "range parameters must implement Comparable; found " + startType.getName());
+        }
+        return startType;
+    }
+
+    private Class<?> box(Class<?> type) {
+        if (!type.isPrimitive()) {
+            return type;
+        }
+        if (type == int.class) return Integer.class;
+        if (type == long.class) return Long.class;
+        if (type == short.class) return Short.class;
+        if (type == byte.class) return Byte.class;
+        if (type == char.class) return Character.class;
+        if (type == float.class) return Float.class;
+        if (type == double.class) return Double.class;
+        throw new IllegalArgumentException("Unsupported primitive range type " + type.getName());
     }
 
     private String defaultCacheName(MethodIdentity identity) {

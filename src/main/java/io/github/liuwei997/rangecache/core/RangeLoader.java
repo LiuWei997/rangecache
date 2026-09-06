@@ -1,11 +1,10 @@
 package io.github.liuwei997.rangecache.core;
 
 import com.google.common.collect.Range;
-import java.time.Instant;
 import java.util.List;
 
 @FunctionalInterface
-public interface RangeLoader {
+public interface RangeLoader<R extends Comparable<? super R>> {
 
-    List<?> load(Range<Instant> range) throws Throwable;
+    List<?> load(Range<R> range) throws Throwable;
 }

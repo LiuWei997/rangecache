@@ -18,7 +18,8 @@ public final class LocalRangeCacheStore {
         this.maximumSeries = maximumSeries;
     }
 
-    public synchronized Lease acquire(SeriesKey key) {
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public synchronized <R extends Comparable<? super R>> Lease<R> acquire(SeriesKey key) {
         Holder holder = entries.computeIfAbsent(key, ignored -> new Holder());
         holder.activeLeases++;
         evictionPolicy.onAccess(key);
@@ -53,7 +54,7 @@ public final class LocalRangeCacheStore {
         return entries.size();
     }
 
-    private synchronized void release(SeriesKey key, LocalRangeCacheEntry entry) {
+    private synchronized void release(SeriesKey key, LocalRangeCacheEntry<?> entry) {
         Holder holder = entries.get(key);
         if (holder != null && holder.entry == entry) {
             holder.activeLeases--;
@@ -81,23 +82,24 @@ public final class LocalRangeCacheStore {
     }
 
     private static final class Holder {
+        @SuppressWarnings("rawtypes")
         private final LocalRangeCacheEntry entry = new LocalRangeCacheEntry();
         private int activeLeases;
     }
 
-    public static final class Lease implements AutoCloseable {
+    public static final class Lease<R extends Comparable<? super R>> implements AutoCloseable {
         private final LocalRangeCacheStore store;
         private final SeriesKey key;
-        private final LocalRangeCacheEntry entry;
+        private final LocalRangeCacheEntry<R> entry;
         private boolean closed;
 
-        private Lease(LocalRangeCacheStore store, SeriesKey key, LocalRangeCacheEntry entry) {
+        private Lease(LocalRangeCacheStore store, SeriesKey key, LocalRangeCacheEntry<R> entry) {
             this.store = store;
             this.key = key;
             this.entry = entry;
         }
 
-        public LocalRangeCacheEntry entry() {
+        public LocalRangeCacheEntry<R> entry() {
             return entry;
         }
 
