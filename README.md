@@ -69,7 +69,7 @@ Set `rangecache.enabled=false` to disable the starter.
 <dependency>
   <groupId>io.github.liuwei997</groupId>
   <artifactId>rangecache-spring-boot-starter</artifactId>
-  <version>0.2.0-SNAPSHOT</version>
+  <version>0.2.1</version>
 </dependency>
 ```
 
