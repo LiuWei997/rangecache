@@ -53,7 +53,6 @@ public final class RangeCacheExecutor implements RangeCacheManager {
                     batches.add(resolveBatch(values, range, rangeProperty, uniqueKeyProperty));
                 }
 
-                validateAgainstEntry(entry, batches, plan.decision(), requestedRange);
                 if (plan.decision() == QueryDecision.FULL_FETCH) {
                     removeRange(entry, requestedRange);
                 }
@@ -116,12 +115,10 @@ public final class RangeCacheExecutor implements RangeCacheManager {
             }
 
             ResolvedRow row = new ResolvedRow(id, coordinate, value);
-            ResolvedRow previous = rows.putIfAbsent(id, row);
-            if (previous != null
-                    && (!previous.coordinate().equals(coordinate) || !Objects.equals(previous.value(), value))) {
-                throw new InvalidRangeCacheResultException(
-                    "Unique key '" + id + "' identifies conflicting rows in one fetch");
-            }
+            // The unique key is the row identity. If a query returns the same
+            // key more than once, the later row wins; do not depend on entity
+            // equals() because JPA may return a different instance.
+            rows.put(id, row);
         }
         return new FetchedBatch(fetchedRange, List.copyOf(rows.values()));
     }
@@ -141,58 +138,41 @@ public final class RangeCacheExecutor implements RangeCacheManager {
         }
     }
 
-    private void validateAgainstEntry(
-            LocalRangeCacheEntry entry,
-            List<FetchedBatch> batches,
-            QueryDecision decision,
-            Range<Instant> requestedRange) {
-
-        Map<Object, ResolvedRow> incoming = new HashMap<>();
-        for (FetchedBatch batch : batches) {
-            for (ResolvedRow row : batch.rows()) {
-                ResolvedRow previous = incoming.putIfAbsent(row.id(), row);
-                if (previous != null
-                        && (!previous.coordinate().equals(row.coordinate())
-                        || !Objects.equals(previous.value(), row.value()))) {
-                    throw new InvalidRangeCacheResultException(
-                        "Unique key '" + row.id() + "' identifies conflicting fetched rows");
-                }
-
-                Instant existingCoordinate = entry.coordinateById().get(row.id());
-                if (existingCoordinate == null) {
-                    continue;
-                }
-                boolean willBeReplaced = decision == QueryDecision.FULL_FETCH
-                    && requestedRange.contains(existingCoordinate);
-                if (!willBeReplaced && (!existingCoordinate.equals(row.coordinate())
-                        || !Objects.equals(entry.rowsById().get(row.id()), row.value()))) {
-                    throw new InvalidRangeCacheResultException(
-                        "Unique key '" + row.id() + "' conflicts with an existing cached row");
-                }
-            }
-        }
-
-        Map<Instant, List<Object>> idsToCheck = new HashMap<>();
-        entry.rowIdsByCoordinate().forEach(
-            (coordinate, ids) -> idsToCheck.put(coordinate, new ArrayList<>(ids)));
-        incoming.values().forEach(
-            row -> idsToCheck.computeIfAbsent(row.coordinate(), ignored -> new ArrayList<>()).add(row.id()));
-        idsToCheck.values().forEach(ids -> ids.sort(this::compareIds));
-    }
-
     private void commit(LocalRangeCacheEntry entry, List<FetchedBatch> batches) {
         for (FetchedBatch batch : batches) {
             for (ResolvedRow row : batch.rows()) {
-                if (!entry.rowsById().containsKey(row.id())) {
-                    entry.rowIdsByCoordinate()
-                        .computeIfAbsent(row.coordinate(), ignored -> new ArrayList<>())
-                        .add(row.id());
-                    entry.rowIdsByCoordinate().get(row.coordinate()).sort(this::compareIds);
+                Instant previousCoordinate = entry.coordinateById().get(row.id());
+                if (previousCoordinate == null) {
+                    addToCoordinateIndex(entry, row);
+                } else if (!previousCoordinate.equals(row.coordinate())) {
+                    removeFromCoordinateIndex(entry, previousCoordinate, row.id());
+                    addToCoordinateIndex(entry, row);
                 }
                 entry.rowsById().put(row.id(), row.value());
                 entry.coordinateById().put(row.id(), row.coordinate());
             }
             entry.coverage().add(batch.range());
+        }
+    }
+
+    private void addToCoordinateIndex(LocalRangeCacheEntry entry, ResolvedRow row) {
+        entry.rowIdsByCoordinate()
+            .computeIfAbsent(row.coordinate(), ignored -> new ArrayList<>())
+            .add(row.id());
+        entry.rowIdsByCoordinate().get(row.coordinate()).sort(this::compareIds);
+    }
+
+    private void removeFromCoordinateIndex(
+            LocalRangeCacheEntry entry,
+            Instant coordinate,
+            Object id) {
+        List<Object> ids = entry.rowIdsByCoordinate().get(coordinate);
+        if (ids == null) {
+            return;
+        }
+        ids.removeIf(existingId -> Objects.equals(existingId, id));
+        if (ids.isEmpty()) {
+            entry.rowIdsByCoordinate().remove(coordinate);
         }
     }
 
