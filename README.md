@@ -4,8 +4,6 @@
 
 Requires Java 17+ and Spring Boot 3+.
 
-[V0.1 implementation specification](docs/implementation-spec-v0.1.md)
-
 Most caches treat each query range as a different cache key. For example, after loading `[01:00, 14:00)`, a request for `[00:00, 15:00)` may query the entire second range again, even though most of it was already read.
 
 rangecache is designed for ordered, append-mostly data such as event logs, transaction history, and audit records.
@@ -25,13 +23,42 @@ only fetch:      [00:00, 01:00), [14:00, 15:00)
 
 ## Usage
 
+### Use the source code directly
+
+Clone the repository and install the library into your local Maven repository:
+
+```bash
+git clone https://github.com/LiuWei997/rangecache.git
+cd rangecache
+mvn install
+```
+
+Then add the locally installed starter to your Spring Boot application:
+
+```xml
+<dependency>
+  <groupId>io.github.liuwei997</groupId>
+  <artifactId>rangecache-spring-boot-starter</artifactId>
+  <version>0.2.0-SNAPSHOT</version>
+</dependency>
+```
+
+To update an existing checkout before rebuilding:
+
+```bash
+git pull
+mvn install
+```
+
+### Use a Maven dependency
+
 Add the starter dependency:
 
 ```xml
 <dependency>
   <groupId>io.github.liuwei997</groupId>
   <artifactId>rangecache-spring-boot-starter</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.2.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -59,16 +86,72 @@ With conventional parameter and row property names, only `@RangeCacheable` is re
 List<Event> findEvents(Long userId, Instant rangeStart, Instant rangeEnd);
 ```
 
+To permanently bypass range caching for a method, annotate its first parameter
+with `@RangeCacheBypass`. The invocation proceeds directly to the original
+method and does not read or update the cache:
+
+```java
+@RangeCacheable(
+    rangeProperty = "createdAt",
+    uniqueKeyProperty = "id"
+)
+List<Event> refreshEvents(
+    @RangeCacheBypass Long userId,
+    @RangeStart Instant from,
+    @RangeEnd Instant to
+);
+```
+
+`@RangeCacheBypass` is a method-parameter marker; in V0.2 it is supported only
+on the first parameter. It is intended for a method that should always bypass
+the range cache, rather than for a single call-site toggle.
+
 The method must return a complete, deterministic `List` for the requested range. Both range endpoints are required and must be non-null.
 
-## Configuration
+## Configuration template
+
+All V0.1 properties use the `rangecache` prefix. The following is a complete
+`application.yml` template with the current defaults:
 
 ```yaml
 rangecache:
-  enabled: true
-  max-delta-queries: 5
-  maximum-series: 1000
+  # Enable annotation-driven range caching.
+  enabled: true                         # default: true
+
+  # Maximum number of uncovered intervals fetched as separate database queries.
+  # If the missing interval count is greater than this value, one full-range
+  # query is used instead. A value of 0 always prefers FULL_FETCH when data is missing.
+  max-delta-queries: 5                  # default: 5, must be >= 0
+
+  # Maximum number of logical series retained by the local in-memory LRU cache.
+  # When the limit is reached, the least recently used inactive series is evicted.
+  maximum-series: 4096                  # default: 4096, must be >= 1
 ```
+
+Minimal configuration (all defaults):
+
+```yaml
+rangecache: {}
+```
+
+Disable the starter without removing the dependency:
+
+```yaml
+rangecache:
+  enabled: false
+```
+
+For example, to favor fewer database round trips and keep only 500 logical
+series in memory:
+
+```yaml
+rangecache:
+  max-delta-queries: 2
+  maximum-series: 500
+```
+
+Invalid values fail application startup: `max-delta-queries` cannot be
+negative, and `maximum-series` must be at least `1`.
 
 Enable decision logs when needed:
 

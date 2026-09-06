@@ -3,6 +3,7 @@ package io.github.liuwei997.rangecache.autoconfigure;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.common.collect.Range;
+import io.github.liuwei997.rangecache.annotation.RangeCacheBypass;
 import io.github.liuwei997.rangecache.annotation.RangeCacheable;
 import io.github.liuwei997.rangecache.annotation.RangeEnd;
 import io.github.liuwei997.rangecache.annotation.RangeStart;
@@ -52,6 +53,19 @@ class RangeCacheAutoConfigurationTest {
         });
     }
 
+    @Test
+    void firstParameterBypassMarkerSkipsReadAndWrite() {
+        contextRunner.run(context -> {
+            QueryService service = context.getBean(QueryService.class);
+
+            assertThat(service.bypassedQuery("user-1", at(1), at(10))).hasSize(2);
+            assertThat(service.bypassedQuery("user-1", at(1), at(10))).hasSize(2);
+            assertThat(service.calls()).containsExactly(
+                Range.closedOpen(at(1), at(10)),
+                Range.closedOpen(at(1), at(10)));
+        });
+    }
+
     private static Instant at(long second) {
         return ZERO.plusSeconds(second);
     }
@@ -60,6 +74,12 @@ class RangeCacheAutoConfigurationTest {
 
         @RangeCacheable(rangeProperty = "createdAt", uniqueKeyProperty = "id")
         List<Row> query(String userId, @RangeStart Instant from, @RangeEnd Instant to);
+
+        @RangeCacheable(rangeProperty = "createdAt", uniqueKeyProperty = "id")
+        List<Row> bypassedQuery(
+            @RangeCacheBypass String userId,
+            @RangeStart Instant from,
+            @RangeEnd Instant to);
 
         List<Range<Instant>> calls();
     }
@@ -71,6 +91,13 @@ class RangeCacheAutoConfigurationTest {
 
         @Override
         public List<Row> query(String userId, Instant from, Instant to) {
+            Range<Instant> range = Range.closedOpen(from, to);
+            calls.add(range);
+            return source.stream().filter(row -> range.contains(row.getCreatedAt())).toList();
+        }
+
+        @Override
+        public List<Row> bypassedQuery(String userId, Instant from, Instant to) {
             Range<Instant> range = Range.closedOpen(from, to);
             calls.add(range);
             return source.stream().filter(row -> range.contains(row.getCreatedAt())).toList();

@@ -8,6 +8,7 @@ public record RangeCacheOperation(
         MethodIdentity methodIdentity,
         String cacheName,
         String keyExpression,
+        boolean bypass,
         int startIndex,
         int endIndex,
         String rangeProperty,

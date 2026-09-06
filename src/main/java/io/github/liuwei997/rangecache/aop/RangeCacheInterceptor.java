@@ -42,6 +42,13 @@ public final class RangeCacheInterceptor implements MethodInterceptor {
         if (operation == null) {
             return invocation.proceed();
         }
+        if (operation.bypass()) {
+            logger.debug(
+                "Range cache decision=BYPASS_PARAMETER cache={} method={}",
+                operation.cacheName(),
+                operation.methodIdentity().displayName());
+            return invocation.proceed();
+        }
         if (!(invocation instanceof ProxyMethodInvocation proxyInvocation)) {
             throw new InvalidRangeCacheMethodException(
                 "Range caching requires a Spring ProxyMethodInvocation for "

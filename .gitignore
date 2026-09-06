@@ -2,6 +2,12 @@
 target/
 .m2-cache/
 
+# Documentation: local by default; commit only when explicitly requested
+docs/*
+
+# Local Codex/project memory; never commit
+.codex/
+
 # IntelliJ IDEA
 .idea/
 *.iml
