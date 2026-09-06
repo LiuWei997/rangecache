@@ -5,10 +5,8 @@
 
 rangecache v0.3 adds support for non-`Instant` naturally ordered range types,
 including `LocalDate`, `LocalDateTime`, `Integer`, `Long`, `BigDecimal`, and
-`String`.
+`String`. It is under active testing and is not a stable release yet. See the [v0.3 preview branch](https://github.com/LiuWei997/rangecache/tree/preview).
 
-It is under active testing and is not a stable release yet. See the
-[v0.3 preview branch](https://github.com/LiuWei997/rangecache/tree/preview).
 ---
 
 rangecache is a Spring Boot cache for ordered range queries. When a new query
