@@ -30,15 +30,26 @@ jobs:
         run: |
           echo "value=$(mvn --quiet help:evaluate -Dexpression=project.version -DforceStdout)" >> "$GITHUB_OUTPUT"
 
+      - name: Verify access to the private consumer sample
+        env:
+          SAMPLE_TOKEN: ${{ secrets.RANGECACHE_SAMPLE_READ_TOKEN }}
+        run: |
+          if [ -z "$SAMPLE_TOKEN" ]; then
+            echo "::error::RANGECACHE_SAMPLE_READ_TOKEN is missing from this repository's Actions secrets."
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SAMPLE_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/LiuWei997/rangecache-sample \
+            --output /dev/null
+
       - name: Check out consumer sample
         uses: actions/checkout@v5
         with:
           repository: LiuWei997/rangecache-sample
           ref: main
           path: rangecache-sample
-          # GITHUB_TOKEN is scoped to this repository and cannot read the
-          # separate sample repository. Configure this fine-grained PAT with
-          # Contents: Read access to rangecache-sample only.
           token: ${{ secrets.RANGECACHE_SAMPLE_READ_TOKEN }}
 
       - name: Test sample with this build
@@ -56,7 +67,7 @@ jobs:
           {
             echo "## Consumer sample test"
             echo
-            echo "- rangecache version: \`${{ steps.version.outputs.value || 'not built' }}\`"
+            echo "- rangecache version: `${{ steps.version.outputs.value || 'not built' }}`"
             echo "- library build: **${{ steps.library_build.outcome }}**"
             echo "- rangecache-sample test: **${{ steps.sample_test.outcome }}**"
           } >> "$GITHUB_STEP_SUMMARY"
