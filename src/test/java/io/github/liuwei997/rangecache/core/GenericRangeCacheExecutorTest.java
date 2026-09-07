@@ -76,5 +76,36 @@ class GenericRangeCacheExecutorTest {
             .hasMessageContaining("Cached series range type is " + Integer.class.getName());
     }
 
+    @Test
+    void invalidatesEveryDocumentedCoordinateType() throws Throwable {
+        Instant instant = Instant.parse("2026-01-01T00:00:00Z");
+        invalidates(instant, instant.plusSeconds(1), instant.plusSeconds(2));
+        invalidates(LocalDateTime.of(2026, 1, 1, 0, 0), LocalDateTime.of(2026, 1, 2, 0, 0), LocalDateTime.of(2026, 1, 3, 0, 0));
+        invalidates(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 2), LocalDate.of(2026, 1, 3));
+        invalidates(OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC), OffsetDateTime.of(2026, 1, 2, 0, 0, 0, 0, ZoneOffset.UTC), OffsetDateTime.of(2026, 1, 3, 0, 0, 0, 0, ZoneOffset.UTC));
+        invalidates(ZonedDateTime.of(2026, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC), ZonedDateTime.of(2026, 1, 2, 0, 0, 0, 0, ZoneOffset.UTC), ZonedDateTime.of(2026, 1, 3, 0, 0, 0, 0, ZoneOffset.UTC));
+        invalidates(1, 2, 3); invalidates(1L, 2L, 3L);
+        invalidates(new BigDecimal("1.00"), new BigDecimal("2.00"), new BigDecimal("3.00"));
+        invalidates("a", "m", "z");
+    }
+
+    private <R extends Comparable<? super R>> void invalidates(R start, R middle, R end) throws Throwable {
+        RangeCacheExecutor executor = new RangeCacheExecutor(new LocalRangeCacheStore(10), new DefaultRangeQueryPlanner(5));
+        SeriesKey key = new SeriesKey("generic", new MethodIdentity("Test", "invalidate", List.of(start.getClass().getName())), "key");
+        executor.execute(key, Range.closed(start, end), "cachedRange", "id", range -> List.of(
+            new Row(start, 1L), new Row(middle, 2L), new Row(end, 3L)));
+
+        executor.evictEntity(key, 2L);
+        RangeCacheExecution entityEvicted = executor.execute(key, Range.closed(start, end), "cachedRange", "id",
+            ignored -> { throw new AssertionError("entity eviction must retain coverage"); });
+        assertThat(entityEvicted.decision()).isEqualTo(QueryDecision.CACHE_ONLY);
+        assertThat(entityEvicted.rows()).hasSize(2);
+
+        executor.invalidateRange(key, Range.closed(middle, middle));
+        RangeCacheExecution rangeInvalidated = executor.execute(key, Range.closed(start, end), "cachedRange", "id",
+            range -> List.of(new Row(middle, 2L)));
+        assertThat(rangeInvalidated.rows()).hasSize(3);
+    }
+
     record Row(Object cachedRange, Long id) { }
 }

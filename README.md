@@ -2,13 +2,6 @@
 
 [中文說明 / Chinese version](docs/README.ch.md)
 
-
-rangecache v0.3 adds support for non-`Instant` naturally ordered range types,
-including `LocalDate`, `LocalDateTime`, `Integer`, `Long`, `BigDecimal`, and
-`String`. It is under active testing and is not a stable release yet. See the [v0.3 preview branch](https://github.com/LiuWei997/rangecache/tree/preview).
-
----
-
 rangecache is a Spring Boot cache for ordered range queries. When a new query
 overlaps data that has already been checked, it queries only the uncovered
 gaps and merges the result with the cached rows.
@@ -76,7 +69,7 @@ Set `rangecache.enabled=false` to disable the starter.
 <dependency>
   <groupId>io.github.liuwei997</groupId>
   <artifactId>rangecache-spring-boot-starter</artifactId>
-  <version>0.3.0-SNAPSHOT</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 
@@ -107,6 +100,95 @@ Requires Java 17+ and Spring Boot 3+.
   are not included yet.
 - The data should be ordered and append-mostly. Backdated updates or deletes
   require explicit invalidation.
+
+## Cache keys and invalidation
+
+rangecache uses two different keys. They have different scopes and must not be
+confused:
+
+| Name | Scope | Source | Purpose |
+| --- | --- | --- | --- |
+| `SeriesKey` | One logical query series | `cacheName` + annotated method identity + `argumentKey` | Selects a cache entry and its range coverage |
+| `uniqueKey` | One returned row inside that series | The value of `uniqueKeyProperty` (for example, `Event.id`) | Deduplicates rows, updates a cached row, and targets `evictEntity` |
+
+The range endpoints are deliberately **not** part of `SeriesKey`: requests with
+the same non-range arguments share coverage, so the cache can fetch only their
+gaps. `MethodIdentity` is the annotated method's declaring type, method name,
+and declared parameter types; it prevents two methods with the same cache name
+from accidentally sharing entries.
+
+`argumentKey` is created as follows:
+
+| `@RangeCacheable.key` | Non-range arguments | `argumentKey` |
+| --- | --- | --- |
+| Empty (default) | None | `SimpleKey.EMPTY` |
+| Empty (default) | One | That argument itself |
+| Empty (default) | Two or more | Spring `SimpleKey` containing those arguments in parameter order |
+| SpEL expression | Any | The expression result; `null` becomes `SimpleKey.EMPTY` |
+
+For example, a query declared as below uses `"account-a"` as its argument key;
+the range endpoints do not participate:
+
+```java
+Method method = EventRepository.class.getMethod(
+    "findEvents", String.class, Instant.class, Instant.class);
+SeriesKey accountAEvents = new SeriesKey(
+    "events", MethodIdentity.of(method), "account-a");
+```
+
+For a method with `String tenant, String kind, @RangeStart ..., @RangeEnd ...`,
+the equivalent automatic key is `new SimpleKey(tenant, kind)`. For
+`@RangeCacheable(key = "#tenant + ':' + #kind")`, it is the resulting string,
+such as `"tenant-a:orders"`.
+
+`uniqueKeyProperty` must name a non-null, mutually comparable property that is
+unique **within the SeriesKey**. It is usually the entity primary key:
+
+```java
+@RangeCacheable(
+    cacheName = "events",
+    rangeProperty = "createdAt",
+    uniqueKeyProperty = "id"
+)
+```
+
+Pass exactly that property value to `evictEntity`; for the example above it is
+the `Long id`, not an entity instance or a `SeriesKey` field.
+
+Inject `RangeCacheManager` to invalidate data after a write. All operations use
+the exact `SeriesKey` of the cached method.
+
+| Operation | Effect on cached rows | Effect on range coverage | When the same range is requested again |
+| --- | --- | --- | --- |
+| `evictEntity(seriesKey, uniqueKey)` | Removes only that entity | Unchanged | Cache is used; the removed entity is not reloaded |
+| `invalidateRange(seriesKey, Range.closed(from, to))` | Removes entities inside the range | Removes that covered range | The uncovered interval is fetched again |
+| `clearSeries(seriesKey)` | Removes the series | Removes all coverage for the series | The whole request is fetched again |
+| `clearMethod(cacheName)` | Removes every series for that cache name | Removes all their coverage | Each affected series is fetched again |
+| `clearAll()` | Removes every cached series | Removes all coverage | Every request is fetched again |
+
+Entity eviction is useful when a deleted or unauthorized entity must disappear
+immediately, while retaining known coverage and avoiding a query. It is not a
+refresh operation: a later cached read will still omit that entity. Use range
+invalidation after inserts, updates, or deletes when the database should be
+queried again for that interval.
+
+```java
+@Service
+class EventWriter {
+    private final RangeCacheManager rangeCacheManager;
+
+    void deleteEvent(long id, Instant createdAt) {
+        // delete from the database first
+        rangeCacheManager.evictEntity(accountAEvents, id);
+    }
+
+    void updateOrInsertEvent(Instant createdAt) {
+        // write to the database first; this also invalidates negative coverage
+        rangeCacheManager.invalidateRange(
+            accountAEvents, Range.closed(createdAt, createdAt));
+    }
+}
+```
 
 ---
 🌟 Support this projectIf you like this project, please give it a Star! It helps more people discover the repository and is the best encouragement for open-source creators.

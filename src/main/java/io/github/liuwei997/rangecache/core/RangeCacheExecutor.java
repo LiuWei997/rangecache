@@ -1,5 +1,6 @@
 package io.github.liuwei997.rangecache.core;
 
+import com.google.common.collect.BoundType;
 import com.google.common.collect.Range;
 import io.github.liuwei997.rangecache.planner.QueryDecision;
 import io.github.liuwei997.rangecache.planner.QueryPlan;
@@ -10,7 +11,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Objects;
 import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.BeanWrapperImpl;
@@ -44,7 +44,7 @@ public final class RangeCacheExecutor implements RangeCacheManager {
                     batches.add(resolveBatch(loader.load(range), range, rangeProperty, uniqueKeyProperty,
                         requestedRange.lowerEndpoint().getClass()));
                 }
-                if (plan.decision() == QueryDecision.FULL_FETCH) removeRange(entry, requestedRange);
+                if (plan.decision() == QueryDecision.FULL_FETCH) entry.removeRange(requestedRange);
                 commit(entry, batches);
                 return new RangeCacheExecution(plan.decision(), plan.missingRangeCount(), plan.rangesToFetch().size(),
                     slice(entry, requestedRange));
@@ -52,9 +52,55 @@ public final class RangeCacheExecutor implements RangeCacheManager {
         }
     }
 
-    @Override public void clearSeries(SeriesKey seriesKey) { store.clearSeries(Objects.requireNonNull(seriesKey, "seriesKey")); }
-    @Override public void clearMethod(String cacheName) { store.clearMethod(Objects.requireNonNull(cacheName, "cacheName")); }
-    @Override public void clearAll() { store.clearAll(); }
+    @Override
+    public void clearSeries(SeriesKey seriesKey) {
+        store.clearSeries(Objects.requireNonNull(seriesKey, "seriesKey"));
+    }
+
+    @Override
+    public void clearMethod(String cacheName) {
+        store.clearMethod(Objects.requireNonNull(cacheName, "cacheName"));
+    }
+
+    @Override
+    public void clearAll() {
+        store.clearAll();
+    }
+
+    @Override
+    public void evictEntity(SeriesKey seriesKey, Object uniqueKey) {
+        Objects.requireNonNull(seriesKey, "seriesKey");
+        Objects.requireNonNull(uniqueKey, "uniqueKey");
+        try (LocalRangeCacheStore.Lease<?> lease = store.acquireIfPresent(seriesKey)) {
+            if (lease == null) return;
+            LocalRangeCacheEntry<?> entry = lease.entry();
+            entry.lock().lock();
+            try {
+                entry.removeEntity(uniqueKey);
+            } finally {
+                entry.lock().unlock();
+            }
+        }
+    }
+
+    @Override
+    public <R extends Comparable<? super R>> void invalidateRange(SeriesKey seriesKey, Range<R> range) {
+        Objects.requireNonNull(seriesKey, "seriesKey");
+        Objects.requireNonNull(range, "range");
+        requireClosedRange(range);
+        try (LocalRangeCacheStore.Lease<R> lease = store.acquireIfPresent(seriesKey)) {
+            if (lease == null) return;
+            LocalRangeCacheEntry<R> entry = lease.entry();
+            entry.lock().lock();
+            try {
+                entry.bindRangeType(range.lowerEndpoint().getClass());
+                entry.removeRange(range);
+                entry.coverage().remove(range);
+            } finally {
+                entry.lock().unlock();
+            }
+        }
+    }
 
     private <R extends Comparable<? super R>> FetchedBatch<R> resolveBatch(List<?> values,
             Range<R> fetchedRange, String rangeProperty, String uniqueKeyProperty, Class<?> expectedType) {
@@ -72,6 +118,16 @@ public final class RangeCacheExecutor implements RangeCacheManager {
             rows.put(id, new ResolvedRow<>(id, coordinate, value));
         }
         return new FetchedBatch<>(fetchedRange, List.copyOf(rows.values()));
+    }
+
+    private void requireClosedRange(Range<?> range) {
+        if (!range.hasLowerBound() || !range.hasUpperBound()
+                || range.lowerBoundType() != BoundType.CLOSED || range.upperBoundType() != BoundType.CLOSED) {
+            throw new IllegalArgumentException("Invalidated range must be closed and bounded");
+        }
+        if (range.lowerEndpoint().getClass() != range.upperEndpoint().getClass()) {
+            throw new IllegalArgumentException("Invalidated range endpoints must have the same concrete type");
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -100,7 +156,7 @@ public final class RangeCacheExecutor implements RangeCacheManager {
                 // index move. compareTo matches the TreeMap/Guava range semantics
                 // (for example, BigDecimal 1.0 and 1.00 share one coordinate).
                 else if (previous.compareTo(row.coordinate()) != 0) {
-                    remove(entry, previous, row.id());
+                    entry.removeEntity(row.id());
                     add(entry, row);
                 }
                 entry.rowsById().put(row.id(), row.value());
@@ -113,22 +169,6 @@ public final class RangeCacheExecutor implements RangeCacheManager {
     private <R extends Comparable<? super R>> void add(LocalRangeCacheEntry<R> entry, ResolvedRow<R> row) {
         entry.rowIdsByCoordinate().computeIfAbsent(row.coordinate(), ignored -> new ArrayList<>()).add(row.id());
         entry.rowIdsByCoordinate().get(row.coordinate()).sort(this::compareIds);
-    }
-
-    private <R extends Comparable<? super R>> void remove(LocalRangeCacheEntry<R> entry, R coordinate, Object id) {
-        List<Object> ids = entry.rowIdsByCoordinate().get(coordinate);
-        if (ids == null) return;
-        ids.removeIf(existing -> Objects.equals(existing, id));
-        if (ids.isEmpty()) entry.rowIdsByCoordinate().remove(coordinate);
-    }
-
-    private <R extends Comparable<? super R>> void removeRange(LocalRangeCacheEntry<R> entry, Range<R> range) {
-        NavigableMap<R, List<Object>> selected = entry.rowIdsByCoordinate().subMap(range.lowerEndpoint(), true, range.upperEndpoint(), true);
-        for (R coordinate : new ArrayList<>(selected.keySet())) {
-            for (Object id : entry.rowIdsByCoordinate().remove(coordinate)) {
-                entry.rowsById().remove(id); entry.coordinateById().remove(id);
-            }
-        }
     }
 
     private <R extends Comparable<? super R>> List<?> slice(LocalRangeCacheEntry<R> entry, Range<R> range) {

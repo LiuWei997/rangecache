@@ -17,7 +17,12 @@ public @interface RangeCacheable {
     /** Empty means a key is generated from the non-range method arguments. */
     String key() default "";
 
+    /** Name of the returned row property that supplies its range coordinate. */
     String rangeProperty() default "cachedRange";
 
+    /**
+     * Name of a non-null Comparable row property that uniquely identifies a
+     * row within one {@code SeriesKey}; commonly an entity primary key.
+     */
     String uniqueKeyProperty() default "nonRepeatedKey";
 }

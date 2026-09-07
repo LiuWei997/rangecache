@@ -157,6 +157,48 @@ class RangeCacheExecutorTest {
         assertThat(queries).hasValue(2);
     }
 
+    @Test
+    void evictsOneEntityWithoutChangingCoverage() throws Throwable {
+        execute(range(1, 3), ignored -> List.of(row(1, 1), row(2, 2), row(3, 3)));
+
+        executor.evictEntity(key, 2L);
+        RangeCacheExecution result = execute(range(1, 3), ignored -> {
+            throw new AssertionError("entity eviction must retain coverage");
+        });
+
+        assertThat(result.decision()).isEqualTo(QueryDecision.CACHE_ONLY);
+        assertThat(result.rows()).extracting(row -> ((Row) row).getNonRepeatedKey())
+            .containsExactly(1L, 3L);
+    }
+
+    @Test
+    void invalidatesOnlyTheRequestedRangeAndRefetchesIt() throws Throwable {
+        AtomicInteger queries = new AtomicInteger();
+        RangeLoader loader = fetchedRange -> {
+            queries.incrementAndGet();
+            return List.of(row(1, 1), row(2, 2), row(3, 3)).stream()
+                .filter(row -> fetchedRange.contains(row.getCachedRange()))
+                .toList();
+        };
+        execute(range(1, 3), loader);
+
+        executor.invalidateRange(key, range(2, 2));
+        RangeCacheExecution result = execute(range(1, 3), loader);
+
+        assertThat(result.decision()).isEqualTo(QueryDecision.DELTA_FETCH);
+        assertThat(queries).hasValue(2);
+        assertThat(result.rows()).extracting(row -> ((Row) row).getNonRepeatedKey())
+            .containsExactly(1L, 2L, 3L);
+    }
+
+    @Test
+    void rejectsAnOpenInvalidationRange() {
+        assertThatThrownBy(() -> executor.invalidateRange(key, Range.open(
+            ZERO.plusSeconds(1), ZERO.plusSeconds(2))))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("closed and bounded");
+    }
+
     private RangeCacheExecution execute(Range<Instant> range, RangeLoader loader) throws Throwable {
         return executor.execute(key, range, "cachedRange", "nonRepeatedKey", loader);
     }

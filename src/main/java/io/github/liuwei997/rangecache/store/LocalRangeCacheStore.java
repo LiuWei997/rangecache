@@ -34,6 +34,17 @@ public final class LocalRangeCacheStore {
         }
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public synchronized <R extends Comparable<? super R>> Lease<R> acquireIfPresent(SeriesKey key) {
+        Holder holder = entries.get(key);
+        if (holder == null) {
+            return null;
+        }
+        holder.activeLeases++;
+        evictionPolicy.onAccess(key);
+        return new Lease(this, key, holder.entry);
+    }
+
     public synchronized void clearMethod(String cacheName) {
         Objects.requireNonNull(cacheName, "cacheName");
         entries.keySet().removeIf(key -> {

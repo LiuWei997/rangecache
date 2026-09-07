@@ -73,7 +73,7 @@ rangecache:
 <dependency>
   <groupId>io.github.liuwei997</groupId>
   <artifactId>rangecache-spring-boot-starter</artifactId>
-  <version>0.3.0-SNAPSHOT</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 
@@ -97,6 +97,85 @@ mvn install
 - 預設使用 local in-memory LRU；目前尚未支援 Redis 或 distributed cache。
 - 資料應該是有順序且以 append-mostly 為主；對已覆蓋範圍進行補寫、更新或刪除
   時，需要主動清除相關 cache。
+
+## Cache key 與失效策略
+
+rangecache 使用兩種不同層級的 key，請不要混用：
+
+| 名稱 | 範圍 | 來源 | 用途 |
+| --- | --- | --- | --- |
+| `SeriesKey` | 一個 logical query series | `cacheName` + annotated method identity + `argumentKey` | 選擇 cache entry 與其 range coverage |
+| `uniqueKey` | 該 series 內的一筆 row | `uniqueKeyProperty` 的值（例如 `Event.id`） | row 去重、更新 cached row，以及指定 `evictEntity` 的目標 |
+
+range endpoint **不**是 `SeriesKey` 的一部分：相同非 range 參數的查詢可以共用
+coverage，因此只需要讀取缺口。`MethodIdentity` 由 annotated method 的 declaring
+type、method name 和 declared parameter types 組成，可避免不同 method 即使使用
+相同 cache name 也意外共用 entry。
+
+`argumentKey` 的組成規則：
+
+| `@RangeCacheable.key` | 非 range 參數 | `argumentKey` |
+| --- | --- | --- |
+| 空白（預設） | 沒有 | `SimpleKey.EMPTY` |
+| 空白（預設） | 一個 | 該參數本身 |
+| 空白（預設） | 兩個以上 | 依 parameter order 放入 Spring `SimpleKey` |
+| SpEL expression | 任意 | expression 的結果；`null` 會成為 `SimpleKey.EMPTY` |
+
+例如下列 query 的 argument key 是 `"account-a"`，range endpoint 不會參與：
+
+```java
+Method method = EventRepository.class.getMethod(
+    "findEvents", String.class, Instant.class, Instant.class);
+SeriesKey accountAEvents = new SeriesKey(
+    "events", MethodIdentity.of(method), "account-a");
+```
+
+若 method 是 `String tenant, String kind, @RangeStart ..., @RangeEnd ...`，對應的
+自動 key 是 `new SimpleKey(tenant, kind)`；若使用
+`@RangeCacheable(key = "#tenant + ':' + #kind")`，則是 expression 結果，例如
+`"tenant-a:orders"`。
+
+`uniqueKeyProperty` 必須是 non-null、可互相比較，且在該 `SeriesKey` 內唯一的
+property；通常直接使用 entity 的 primary key：
+
+```java
+@RangeCacheable(
+    cacheName = "events",
+    rangeProperty = "createdAt",
+    uniqueKeyProperty = "id"
+)
+```
+
+呼叫 `evictEntity` 時傳入的就是這個 property value；上例是 `Long id`，不是
+entity instance，也不是 `SeriesKey` 的欄位。
+
+資料寫入後可注入 `RangeCacheManager` 進行失效。所有操作都需要傳入和被快取
+方法完全相同的 `SeriesKey`。
+
+| 操作 | 對 cached entity 的影響 | 對 range coverage 的影響 | 下次查詢相同 range |
+| --- | --- | --- | --- |
+| `evictEntity(seriesKey, uniqueKey)` | 只移除指定 entity | 不變 | 使用 cache，不會重新讀回該 entity |
+| `invalidateRange(seriesKey, Range.closed(from, to))` | 移除 range 內 entity | 移除該 range coverage | 重新查詢未覆蓋的區間 |
+| `clearSeries(seriesKey)` | 移除該 series | 移除該 series 的全部 coverage | 整個 request 重新查詢 |
+| `clearMethod(cacheName)` | 移除該 cache name 的所有 series | 移除全部 coverage | 各 series 重新查詢 |
+| `clearAll()` | 移除全部 series | 移除全部 coverage | 所有 request 重新查詢 |
+
+`evictEntity` 適合在刪除資料或權限變更後，讓某筆 entity 立刻不再出現，並保留
+已知 coverage、避免額外查詢。它不是 refresh：後續已覆蓋的讀取仍會省略該筆
+entity。新增、更新或刪除後若應重新從資料庫取得該區間，請用 range invalidation。
+
+```java
+void deleteEvent(long id) {
+    // 先刪除資料庫資料
+    rangeCacheManager.evictEntity(accountAEvents, id);
+}
+
+void updateOrInsertEvent(Instant createdAt) {
+    // 先寫入資料庫；也會清掉該點的 negative coverage
+    rangeCacheManager.invalidateRange(
+        accountAEvents, Range.closed(createdAt, createdAt));
+}
+```
 
 ---
 🌟 支持一下如果您喜歡這個專案，請給它一個 Star ⭐！這可以讓更多人看到這個專案，也是對開源創作者最好的鼓勵與支持。
