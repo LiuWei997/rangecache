@@ -50,9 +50,6 @@ jobs:
           repository: LiuWei997/rangecache-sample
           ref: main
           path: rangecache-sample
-          # GITHUB_TOKEN is scoped to this repository and cannot read the
-          # separate sample repository. Configure this fine-grained PAT with
-          # Contents: Read access to rangecache-sample only.
           token: ${{ secrets.RANGECACHE_SAMPLE_READ_TOKEN }}
 
       - name: Test sample with this build
@@ -70,7 +67,7 @@ jobs:
           {
             echo "## Consumer sample test"
             echo
-            echo "- rangecache version: \`${{ steps.version.outputs.value || 'not built' }}\`"
+            echo "- rangecache version: `${{ steps.version.outputs.value || 'not built' }}`"
             echo "- library build: **${{ steps.library_build.outcome }}**"
             echo "- rangecache-sample test: **${{ steps.sample_test.outcome }}**"
           } >> "$GITHUB_STEP_SUMMARY"
