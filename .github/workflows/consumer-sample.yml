@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: LiuWei997/rangecache-sample
-          ref: master
+          ref: main
           path: rangecache-sample
           # GITHUB_TOKEN is scoped to this repository and cannot read the
           # separate sample repository. Configure this fine-grained PAT with
