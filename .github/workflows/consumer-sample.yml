@@ -1,0 +1,61 @@
+name: Consumer sample test
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  test-sample-against-current-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out rangecache
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build and install rangecache
+        id: library_build
+        run: mvn --batch-mode --no-transfer-progress clean install
+
+      - name: Read built version
+        id: version
+        run: |
+          echo "value=$(mvn --quiet --forceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out consumer sample
+        uses: actions/checkout@v4
+        with:
+          repository: LiuWei997/rangecache-sample
+          path: rangecache-sample
+
+      - name: Test sample with this build
+        id: sample_test
+        continue-on-error: true
+        working-directory: rangecache-sample
+        run: >-
+          mvn --batch-mode --no-transfer-progress
+          -Drangecache.version=${{ steps.version.outputs.value }}
+          test
+
+      - name: Write test summary
+        if: always()
+        run: |
+          {
+            echo "## Consumer sample test"
+            echo
+            echo "- rangecache version: \`${{ steps.version.outputs.value || 'not built' }}\`"
+            echo "- library build: **${{ steps.library_build.outcome }}**"
+            echo "- rangecache-sample test: **${{ steps.sample_test.outcome }}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail when the consumer sample fails
+        if: steps.sample_test.outcome == 'failure'
+        run: exit 1
