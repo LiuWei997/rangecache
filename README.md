@@ -2,7 +2,12 @@
 
 [中文說明 / Chinese version](docs/README.ch.md)
 
-![rangecache missing-range query](docs/p0.png)
+
+rangecache v0.3 adds support for non-`Instant` naturally ordered range types,
+including `LocalDate`, `LocalDateTime`, `Integer`, `Long`, `BigDecimal`, and
+`String`. It is under active testing and is not a stable release yet. See the [v0.3 preview branch](https://github.com/LiuWei997/rangecache/tree/preview).
+
+---
 
 rangecache is a Spring Boot cache for ordered range queries. When a new query
 overlaps data that has already been checked, it queries only the uncovered
@@ -10,6 +15,8 @@ gaps and merges the result with the cached rows.
 
 In the diagram, `[01:00, 14:00]` is already cached. A later request for
 `[00:00, 15:00]` queries only `[00:00, 01:00]` and `[14:00, 15:00]`.
+
+![rangecache missing-range query](docs/p0.png)
 
 ## Quick start
 

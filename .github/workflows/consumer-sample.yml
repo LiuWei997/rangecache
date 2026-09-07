@@ -1,0 +1,77 @@
+name: Consumer sample test
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  test-sample-against-current-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out rangecache
+        uses: actions/checkout@v5
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build and install rangecache
+        id: library_build
+        run: mvn --batch-mode --no-transfer-progress clean install
+
+      - name: Read built version
+        id: version
+        run: |
+          echo "value=$(mvn --quiet help:evaluate -Dexpression=project.version -DforceStdout)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify access to the private consumer sample
+        env:
+          SAMPLE_TOKEN: ${{ secrets.RANGECACHE_SAMPLE_READ_TOKEN }}
+        run: |
+          if [ -z "$SAMPLE_TOKEN" ]; then
+            echo "::error::RANGECACHE_SAMPLE_READ_TOKEN is missing from this repository's Actions secrets."
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SAMPLE_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/LiuWei997/rangecache-sample \
+            --output /dev/null
+
+      - name: Check out consumer sample
+        uses: actions/checkout@v5
+        with:
+          repository: LiuWei997/rangecache-sample
+          ref: main
+          path: rangecache-sample
+          token: ${{ secrets.RANGECACHE_SAMPLE_READ_TOKEN }}
+
+      - name: Test sample with this build
+        id: sample_test
+        continue-on-error: true
+        working-directory: rangecache-sample
+        run: >-
+          mvn --batch-mode --no-transfer-progress
+          -Drangecache.version=${{ steps.version.outputs.value }}
+          test
+
+      - name: Write test summary
+        if: always()
+        run: |
+          {
+            echo "## Consumer sample test"
+            echo
+            echo "- rangecache version: `${{ steps.version.outputs.value || 'not built' }}`"
+            echo "- library build: **${{ steps.library_build.outcome }}**"
+            echo "- rangecache-sample test: **${{ steps.sample_test.outcome }}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail when the consumer sample fails
+        if: steps.sample_test.outcome == 'failure'
+        run: exit 1
