@@ -67,7 +67,7 @@ jobs:
           {
             echo "## Consumer sample test"
             echo
-            echo "- rangecache version: `${{ steps.version.outputs.value || 'not built' }}`"
+            echo "- rangecache version: \`${{ steps.version.outputs.value || 'not built' }}\`"
             echo "- library build: **${{ steps.library_build.outcome }}**"
             echo "- rangecache-sample test: **${{ steps.sample_test.outcome }}**"
           } >> "$GITHUB_STEP_SUMMARY"
